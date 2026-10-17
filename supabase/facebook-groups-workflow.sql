@@ -4,7 +4,7 @@ create table public.facebook_groups (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   name text not null check (char_length(name) between 1 and 160),
-  facebook_url text not null check (facebook_url ~* '^https://(www\\.)?facebook\\.com/'),
+  facebook_url text not null check (facebook_url ~* '^https://(www\.)?facebook\.com/'),
   notes text,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
