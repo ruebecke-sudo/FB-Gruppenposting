@@ -7,9 +7,13 @@ type Organization = { id: string; name: string }
 type Group = { id: string; name: string; facebook_url: string; notes: string | null; is_active: boolean }
 const field: React.CSSProperties = { width: '100%', padding: 10, border: '1px solid #ddd7e1', borderRadius: 6, marginTop: 6, font: '14px DM Sans' }
 
+function errorText(error: unknown) {
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') return error.message
+  return 'Die Gruppe konnte nicht gespeichert werden.'
+}
+
 export default function GroupsPage() {
-  const [organization, setOrganization] = useState<Organization | null>(null)
-  const [groups, setGroups] = useState<Group[]>([])
+  const [organization, setOrganization] = useState<Organization | null>(null), [groups, setGroups] = useState<Group[]>([])
   const [name, setName] = useState(''), [url, setUrl] = useState(''), [notes, setNotes] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false)
   const supabase = createClient()
   async function load() {
@@ -19,10 +23,19 @@ export default function GroupsPage() {
     if (!org) return setMessage('Bitte lege zuerst einen Workspace an.')
     setOrganization(org)
     const { data, error } = await supabase.from('facebook_groups').select('id,name,facebook_url,notes,is_active').eq('organization_id', org.id).order('name')
-    if (error) return setMessage(error.message.includes('facebook_groups') ? 'Die Gruppenlisten-Datenbank ist noch nicht aktiviert. Bitte führe zuerst die neue SQL-Datei in Supabase aus.' : error.message)
+    if (error) return setMessage(error.message.includes('facebook_groups') ? 'Die Gruppenlisten-Datenbank ist noch nicht aktiviert. Bitte führe zuerst die SQL-Datei in Supabase aus.' : error.message)
     setGroups((data ?? []) as Group[])
   }
   useEffect(() => { supabase.auth.getUser().then(({ data }) => { if (!data.user) location.replace('/login'); else load() }) }, [])
-  async function addGroup(event: FormEvent) { event.preventDefault(); if (!organization) return; setBusy(true); setMessage(''); try { const validUrl = new URL(url); if (!/facebook\.com$/i.test(validUrl.hostname) && !/www\.facebook\.com$/i.test(validUrl.hostname)) throw new Error('Bitte verwende einen Facebook-Gruppenlink.'); const { error } = await supabase.from('facebook_groups').insert({ organization_id: organization.id, name, facebook_url: validUrl.href, notes: notes || null }); if (error) throw error; setName(''); setUrl(''); setNotes(''); await load() } catch (error) { setMessage(error instanceof Error ? error.message : 'Die Gruppe konnte nicht gespeichert werden.') } finally { setBusy(false) } }
+  async function addGroup(event: FormEvent) {
+    event.preventDefault(); if (!organization) return; setBusy(true); setMessage('')
+    try {
+      const validUrl = new URL(url)
+      if (!/facebook\.com$/i.test(validUrl.hostname) && !/www\.facebook\.com$/i.test(validUrl.hostname)) throw new Error('Bitte verwende einen Facebook-Gruppenlink.')
+      const { error } = await supabase.from('facebook_groups').insert({ organization_id: organization.id, name, facebook_url: validUrl.href, notes: notes || null })
+      if (error) throw error
+      setName(''); setUrl(''); setNotes(''); await load()
+    } catch (error) { setMessage(errorText(error)) } finally { setBusy(false) }
+  }
   return <main style={{ minHeight: '100vh', padding: '28px 48px', background: '#fbfafb', color: '#292639', fontFamily: 'DM Sans, sans-serif' }}><header style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 36 }}><a href="/dashboard"><img src="/mdw-logo.jpg" alt="MDW – My Digital World" style={{ width: 112, borderRadius: 5 }}/></a><div><a href="/dashboard" style={{ color: '#7156a0', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}>← Zur Übersicht</a><h1 style={{ margin: '7px 0 0', fontFamily: 'Playfair Display, serif' }}>Gruppenlisten</h1></div></header><section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 24, maxWidth: 800, margin: '0 auto', alignItems: 'start' }}><form onSubmit={addGroup} style={{ padding: 30, border: '1px solid #e7e2e8', background: '#fff', borderRadius: 10 }}><p style={{ fontSize: 10, color: '#8a8391', letterSpacing: 1, fontWeight: 700 }}>GRUPPE HINZUFÜGEN</p><label style={{ display: 'block', fontWeight: 700, fontSize: 12 }}>Gruppenname<input required value={name} onChange={event => setName(event.target.value)} placeholder="z. B. Regionalmarkt Köln" style={field}/></label><label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginTop: 14 }}>Facebook-Gruppenlink<input required type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://www.facebook.com/groups/..." style={field}/></label><label style={{ display: 'block', fontWeight: 700, fontSize: 12, marginTop: 14 }}>Notiz (optional)<textarea value={notes} onChange={event => setNotes(event.target.value)} placeholder="Regeln, Thema, erlaubte Beiträge …" style={{ ...field, height: 82, resize: 'vertical' }}/></label><button disabled={busy} style={{ border: 0, borderRadius: 6, background: '#ea725b', color: '#fff', padding: '11px 14px', cursor: 'pointer', fontWeight: 700, marginTop: 18 }}>{busy ? 'Wird gespeichert …' : 'Gruppe speichern'}</button><p style={{ color: '#807987', lineHeight: 1.45, fontSize: 12 }}>Die Veröffentlichung bleibt eine bewusste, manuelle Handlung in Facebook. MDW Publish öffnet nur den von dir hinterlegten Gruppenlink.</p></form><div><p style={{ fontSize: 10, color: '#8a8391', letterSpacing: 1, fontWeight: 700 }}>DEINE AUTORISIERTEN GRUPPEN{organization ? ` / ${organization.name.toUpperCase()}` : ''}</p>{message && <p style={{ background: '#f4eff9', color: '#624b8d', borderRadius: 7, padding: 12 }}>{message}</p>}{groups.length ? <div style={{ display: 'grid', gap: 10 }}>{groups.map(group => <article key={group.id} style={{ padding: 17, background: '#fff', border: '1px solid #e7e2e8', borderRadius: 9, display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center' }}><div><b>{group.name}</b>{group.notes && <small style={{ display: 'block', color: '#817a87', marginTop: 5 }}>{group.notes}</small>}</div><a href={group.facebook_url} target="_blank" rel="noreferrer" style={{ flexShrink: 0, background: '#292639', color: '#fff', borderRadius: 6, padding: '9px 11px', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>In Facebook öffnen ↗</a></article>)}</div> : <p style={{ color: '#807987' }}>Noch keine Gruppe gespeichert.</p>}</div></section></main>
 }
